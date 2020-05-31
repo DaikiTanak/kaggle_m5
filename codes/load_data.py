@@ -1,0 +1,136 @@
+from datetime import datetime, timedelta
+import time
+import gc
+import numpy as np
+import pandas as pd
+import lightgbm as lgb
+import swifter # quick pandas.apply
+pd.options.display.max_columns = 50
+
+
+CAL_DTYPES={
+    "event_name_1": "category",
+    "event_name_2": "category",
+    "event_type_1": "category",
+    "event_type_2": "category",
+    "weekday": "category",
+    'wm_yr_wk': 'int16',
+    "wday": "int16",
+    "month": "int16",
+    "year": "int16",
+    "snap_CA": "float32",
+    'snap_TX': 'float32',
+    'snap_WI': 'float32' }
+
+PRICE_DTYPES = {
+    "store_id": "category",
+    "item_id": "category",
+    "wm_yr_wk": "int16",
+    "sell_price":"float32" }
+
+PATH_PRICE_CSV = "../input/m5-forecasting-accuracy/sell_prices.csv"
+PATH_CALENDER_CSV = "../input/m5-forecasting-accuracy/calendar.csv"
+PATH_SALES_CSV = "../input/m5-forecasting-accuracy/sales_train_validation.csv"
+
+FIRST_DAY = 1 # If you want to load all the data set it to '1' -->  Great  memory overflow  risk !
+h = 28
+max_lags = 60
+tr_last = 1913
+
+# start date where public lb and private lb are calculated
+fday = datetime(2016,4, 25)
+seed = 46
+
+dev_firstdate = fday - timedelta(tr_last - FIRST_DAY)
+
+def create_dt(is_train=True, nrows=None, first_day=1200):
+    prices = pd.read_csv(PATH_PRICE_CSV, dtype = PRICE_DTYPES)
+    for col, col_dtype in PRICE_DTYPES.items():
+        if col_dtype == "category":
+            prices[col] = prices[col].cat.codes.astype("int16")
+            prices[col] -= prices[col].min()
+
+    cal = pd.read_csv(PATH_CALENDER_CSV, dtype = CAL_DTYPES)
+    cal["date"] = pd.to_datetime(cal["date"])
+    for col, col_dtype in CAL_DTYPES.items():
+        if col_dtype == "category":
+            cal[col] = cal[col].cat.codes.astype("int16")
+            cal[col] -= cal[col].min()
+
+    start_day = max(1 if is_train  else tr_last-max_lags, first_day)
+    numcols = [f"d_{day}" for day in range(start_day,tr_last+1)]
+    catcols = ['id', 'item_id', 'dept_id','store_id', 'cat_id', 'state_id']
+    dtype = {numcol:"float32" for numcol in numcols}
+    dtype.update({col: "category" for col in catcols if col != "id"})
+    dt = pd.read_csv(PATH_SALES_CSV,
+                     nrows = nrows, usecols = catcols + numcols, dtype = dtype)
+
+    dt["state_name"] = dt["state_id"].copy()
+
+    # cat2id
+    for col in catcols:
+        if col != "id":
+            dt[col] = dt[col].cat.codes.astype("int16")
+            dt[col] -= dt[col].min()
+
+    if not is_train:
+        for day in range(tr_last+1, tr_last+ 28 +1):
+            dt[f"d_{day}"] = np.nan
+
+    dt = pd.melt(dt,
+                  id_vars = catcols+["state_name"],
+                  value_vars = [col for col in dt.columns if col.startswith("d_")],
+                  var_name = "d",
+                  value_name = "sales")
+
+    dt = dt.merge(cal, on= "d", copy = False)
+    dt = dt.merge(prices, on = ["store_id", "item_id", "wm_yr_wk"], copy = False)
+
+    dt["date"] = pd.to_datetime(dt["date"])
+
+
+    # create snap_flag feature
+    def make_snap_flag(row):
+        state_name = row["state_name"]
+        return row[f"snap_{state_name}"]
+    dt["snap_flag"] = dt.swifter.apply(make_snap_flag, axis=1)
+    del dt["state_name"]; gc.collect();
+
+    return dt
+
+
+def reduce_mem_usage(df):
+    start_mem = df.memory_usage().sum() / 1024**2
+    print('Memory usage of dataframe is {:.2f} MB'.format(start_mem))
+
+    for col in df.columns:
+        col_type = df[col].dtype
+
+        if col_type != object and str(col_type)[:8] != "category" and str(col_type)[:8] != "datetime":
+            c_min = df[col].min()
+            c_max = df[col].max()
+            if str(col_type)[:3] == 'int':
+                if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
+                    df[col] = df[col].astype(np.int8)
+                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
+                    df[col] = df[col].astype(np.int16)
+                elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                    df[col] = df[col].astype(np.int32)
+                elif c_min > np.iinfo(np.int64).min and c_max < np.iinfo(np.int64).max:
+                    df[col] = df[col].astype(np.int64)
+            else:
+                if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
+                    df[col] = df[col].astype(np.float16)
+                elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+                    df[col] = df[col].astype(np.float32)
+                else:
+                    df[col] = df[col].astype(np.float64)
+        else:
+#             df[col] = df[col].astype('category')
+            pass
+
+    end_mem = df.memory_usage().sum() / 1024**2
+    print('Memory usage after optimization is: {:.2f} MB'.format(end_mem))
+    print('Decreased by {:.1f}%'.format(100 * (start_mem - end_mem) / start_mem))
+
+    return df
