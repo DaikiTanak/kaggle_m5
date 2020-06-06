@@ -13,7 +13,6 @@ jupyter = "*"
 jupyter-contrib-nbextensions = "*"
 pandas = "*"
 matplotlib = "*"
-import = "*"
 swifter = "*"
 
 [requires]

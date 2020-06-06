@@ -18,9 +18,9 @@ CAL_DTYPES={
     "wday": "int16",
     "month": "int16",
     "year": "int16",
-    "snap_CA": "float32",
-    'snap_TX': 'float32',
-    'snap_WI': 'float32' }
+    "snap_CA": "int8",
+    'snap_TX': 'int8',
+    'snap_WI': 'int8' }
 
 PRICE_DTYPES = {
     "store_id": "category",
@@ -30,12 +30,13 @@ PRICE_DTYPES = {
 
 PATH_PRICE_CSV = "../input/m5-forecasting-accuracy/sell_prices.csv"
 PATH_CALENDER_CSV = "../input/m5-forecasting-accuracy/calendar.csv"
-PATH_SALES_CSV = "../input/m5-forecasting-accuracy/sales_train_validation.csv"
+# PATH_SALES_CSV = "../input/m5-forecasting-accuracy/sales_train_validation.csv"
+PATH_SALES_CSV = "../input/m5-forecasting-accuracy/sales_train_evaluation.csv"
 
 FIRST_DAY = 1 # If you want to load all the data set it to '1' -->  Great  memory overflow  risk !
 h = 28
 max_lags = 60
-tr_last = 1913
+tr_last = 1941
 
 # start date where public lb and private lb are calculated
 fday = datetime(2016,4, 25)
@@ -44,19 +45,23 @@ seed = 46
 dev_firstdate = fday - timedelta(tr_last - FIRST_DAY)
 
 def create_dt(is_train=True, nrows=None, first_day=1200):
-    prices = pd.read_csv(PATH_PRICE_CSV, dtype = PRICE_DTYPES)
+
+    # load item-price csv.
+    prices = pd.read_csv(PATH_PRICE_CSV, dtype=PRICE_DTYPES)
     for col, col_dtype in PRICE_DTYPES.items():
         if col_dtype == "category":
             prices[col] = prices[col].cat.codes.astype("int16")
             prices[col] -= prices[col].min()
 
-    cal = pd.read_csv(PATH_CALENDER_CSV, dtype = CAL_DTYPES)
+    # load calender csv.
+    cal = pd.read_csv(PATH_CALENDER_CSV, dtype=CAL_DTYPES)
     cal["date"] = pd.to_datetime(cal["date"])
     for col, col_dtype in CAL_DTYPES.items():
         if col_dtype == "category":
             cal[col] = cal[col].cat.codes.astype("int16")
             cal[col] -= cal[col].min()
 
+    # load sales csv.
     start_day = max(1 if is_train  else tr_last-max_lags, first_day)
     numcols = [f"d_{day}" for day in range(start_day,tr_last+1)]
     catcols = ['id', 'item_id', 'dept_id','store_id', 'cat_id', 'state_id']
@@ -74,6 +79,7 @@ def create_dt(is_train=True, nrows=None, first_day=1200):
             dt[col] -= dt[col].min()
 
     if not is_train:
+        # test dataframe
         for day in range(tr_last+1, tr_last+ 28 +1):
             dt[f"d_{day}"] = np.nan
 
