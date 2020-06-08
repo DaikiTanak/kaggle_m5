@@ -1,0 +1,6 @@
+model: aaa
+training:
+  batch_size: 32
+  epoch: 30
+  learning_rate: 0.01
+  patience: 3

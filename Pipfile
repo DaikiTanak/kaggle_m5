@@ -14,6 +14,11 @@ jupyter-contrib-nbextensions = "*"
 pandas = "*"
 matplotlib = "*"
 swifter = "*"
+mlflow = "*"
+torch = "*"
+torchvision = "*"
+hydra-core = "*"
+optuna = "*"
 
 [requires]
 python_version = "3.7"

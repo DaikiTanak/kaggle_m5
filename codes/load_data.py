@@ -15,8 +15,8 @@ CAL_DTYPES={
     "event_type_2": "category",
     "weekday": "category",
     'wm_yr_wk': 'int16',
-    "wday": "int16",
-    "month": "int16",
+    "wday": "int8",
+    "month": "int8",
     "year": "int16",
     "snap_CA": "int8",
     'snap_TX': 'int8',
@@ -27,11 +27,6 @@ PRICE_DTYPES = {
     "item_id": "category",
     "wm_yr_wk": "int16",
     "sell_price":"float32" }
-
-PATH_PRICE_CSV = "../input/m5-forecasting-accuracy/sell_prices.csv"
-PATH_CALENDER_CSV = "../input/m5-forecasting-accuracy/calendar.csv"
-# PATH_SALES_CSV = "../input/m5-forecasting-accuracy/sales_train_validation.csv"
-PATH_SALES_CSV = "../input/m5-forecasting-accuracy/sales_train_evaluation.csv"
 
 FIRST_DAY = 1 # If you want to load all the data set it to '1' -->  Great  memory overflow  risk !
 h = 28
@@ -44,7 +39,7 @@ seed = 46
 
 dev_firstdate = fday - timedelta(tr_last - FIRST_DAY)
 
-def create_dt(is_train=True, nrows=None, first_day=1200):
+def create_dt(PATH_PRICE_CSV, PATH_CALENDER_CSV, PATH_SALES_CSV, is_train=True, nrows=None, first_day=1200, ):
 
     # load item-price csv.
     prices = pd.read_csv(PATH_PRICE_CSV, dtype=PRICE_DTYPES)
@@ -92,8 +87,7 @@ def create_dt(is_train=True, nrows=None, first_day=1200):
     dt = dt.merge(cal, on= "d", copy = False)
     dt = dt.merge(prices, on = ["store_id", "item_id", "wm_yr_wk"], copy = False)
 
-    dt["date"] = pd.to_datetime(dt["date"])
-
+    dt["date"] = pd.to_datetime(dt["date"], format="%Y-%m-%d")
 
     # create snap_flag feature
     def make_snap_flag(row):
@@ -139,4 +133,22 @@ def reduce_mem_usage(df):
     print('Memory usage after optimization is: {:.2f} MB'.format(end_mem))
     print('Decreased by {:.1f}%'.format(100 * (start_mem - end_mem) / start_mem))
 
+    df["date"] = pd.to_datetime(df["date"], format="%Y-%m-%d")
+
     return df
+
+
+
+def save_basic_df():
+    cwd = ""
+    PATH_PRICE_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sell_prices.csv")
+    PATH_CALENDER_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/calendar.csv")
+    # PATH_SALES_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sales_train_validation.csv")
+    PATH_SALES_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sales_train_evaluation.csv")
+    df = load_data.create_dt(PATH_PRICE_CSV, PATH_CALENDER_CSV, PATH_SALES_CSV, first_day=1,)
+    df.to_csv("../input/m5-forecasting-accuracy/sales_train_evaluation_basic.csv")
+    return
+
+
+if __name__ == "__main__":
+    save_basic_df()

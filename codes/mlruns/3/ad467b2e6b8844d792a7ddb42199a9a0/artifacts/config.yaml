@@ -1,0 +1,17 @@
+lgbm:
+  model-params:
+    bagging_fraction: 0.85
+    bagging_freq: 1
+    feature_fraction: 0.6
+    lambda_l2: 0.1
+    learning_rate: 0.08
+    max_depth: 7
+    metric:
+    - custom
+    - rmse
+    min_data_in_leaf: 100
+    num_leaves: 70
+    num_threads: 8
+    objective: tweedie
+    tweedie_variance_power: 1.1
+  train-params: num_boost_round:2500 early_stopping_rounds:500

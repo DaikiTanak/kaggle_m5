@@ -1,0 +1,4 @@
+artifact_location: file:///Users/daiki/Documents/kaggle_m5/codes/outputs/2020-06-08/12-40-10/mlruns/1
+experiment_id: '1'
+lifecycle_stage: active
+name: lgbm-train
