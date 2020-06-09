@@ -133,6 +133,8 @@ def reduce_mem_usage(df):
     print('Memory usage after optimization is: {:.2f} MB'.format(end_mem))
     print('Decreased by {:.1f}%'.format(100 * (start_mem - end_mem) / start_mem))
 
+    gc.collect()
+
     df["date"] = pd.to_datetime(df["date"], format="%Y-%m-%d")
 
     return df

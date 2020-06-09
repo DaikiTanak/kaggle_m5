@@ -2,11 +2,14 @@ from omegaconf import DictConfig, ListConfig
 
 import mlflow
 from mlflow.tracking import MlflowClient
+from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME
 
 
 class MlflowWriter():
-    def __init__(self, experiment_name, **kwargs):
+    def __init__(self, experiment_name, task_name, **kwargs):
         self.client = MlflowClient(**kwargs)
+        self.experiment_name = experiment_name
+        self.task_name = task_name
         try:
             self.experiment_id = self.client.create_experiment(experiment_name)
         except:
@@ -14,7 +17,10 @@ class MlflowWriter():
 
         self.run_id = self.client.create_run(self.experiment_id).info.run_id
 
+        mlflow.set_tag(MLFLOW_RUN_NAME, task_name)
+
         print(f"Exp ID:{self.experiment_id}, Run ID:{self.run_id}")
+
     def log_params_from_omegaconf_dict(self, params):
         for param_name, element in params.items():
             self._explore_recursive(param_name, element)

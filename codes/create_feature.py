@@ -1,14 +1,32 @@
 import pandas as pd
 import numpy as np
+import gc
 
+def roll_target(lag_size: int, window_size: int, categorical_feature: str):
+    """
+        Roll target value w.r.t. category
+        Params:
+            lag_size: lag size for target
+            window_size: window size for rolling
+            categorical_feature: feature name to roll about
+    """
+    return
 
 def create_fea(dt, cash_df=None, start_date=None) -> None:
     # start_date: start date to create features from.
 
+    print("Creating features...")
+
     useless_cols = []
 
-#     lags = [7, 28]
-    lags = [2, 5, 7, 28]
+
+    lag_win_pairs = [
+        (28, 28),
+        (28, 7),
+        (7,7)
+    ]
+    lags = list(set(map(lambda x: x[0], lag_win_pairs)))
+    wins = list(set(map(lambda x: x[1], lag_win_pairs)))
 
     lag_about = ["id","item_id", "dept_id", "cat_id", "store_id", "state_id"]
     today_sale_cols = []
@@ -38,11 +56,11 @@ def create_fea(dt, cash_df=None, start_date=None) -> None:
         else:
             dt[lag_col] = dt[["id", f"today_{f}_mean"]].groupby("id")[f"today_{f}_mean"].shift(lag)
 
-#     wins = [7, 28]
-        wins = [3, 7, 14, 28]
-    for win in wins :
-        for lag, lag_col in zip(lag_saver, lag_cols):
-#             print(f"Making rolling features. lag_col:{lag_col} lag:{lag} window:{win}")
+
+
+    for (lag, win) in lag_win_pairs:
+        for lag_col in lag_cols:
+
             dt[f"rmean_{lag_col}_{lag}_{win}"] = dt[["id", lag_col]].groupby("id")[lag_col].transform(lambda x : x.rolling(win).mean())
 #             dt[f"rmedian_{lag_col}_{lag}_{win}"] = dt[["id", lag_col]].groupby("id")[lag_col].transform(lambda x : x.rolling(win).median())
 
@@ -55,7 +73,6 @@ def create_fea(dt, cash_df=None, start_date=None) -> None:
         "mday": "day",
     }
 
-#     dt.drop(["d", "wm_yr_wk", "weekday"], axis=1, inplace = True)
 
     for date_feat_name, date_feat_func in date_features.items():
         if date_feat_name in dt.columns:
@@ -66,3 +83,5 @@ def create_fea(dt, cash_df=None, start_date=None) -> None:
     for col in useless_cols:
         del dt[col]
     gc.collect()
+
+    return

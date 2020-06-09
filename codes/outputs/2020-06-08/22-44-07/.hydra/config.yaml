@@ -1,0 +1,11 @@
+data:
+  path_basic_df: ../input/m5-forecasting-accuracy/sales_train_evaluation_basic.csv
+lgbm:
+  model_params:
+    metric:
+    - rmse
+    objective: poisson
+  train_params:
+    early_stopping_rounds: 500
+    num_boost_round: 2500
+  tuning: true
