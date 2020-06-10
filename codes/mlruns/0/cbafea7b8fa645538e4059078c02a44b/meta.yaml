@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/daiki/Documents/kaggle_m5/codes/mlruns/0/cbafea7b8fa645538e4059078c02a44b/artifacts
+end_time: 1591716026482
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+name: ''
+run_id: cbafea7b8fa645538e4059078c02a44b
+run_uuid: cbafea7b8fa645538e4059078c02a44b
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1591715735567
+status: 3
+tags: []
+user_id: daiki

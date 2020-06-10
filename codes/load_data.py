@@ -63,7 +63,9 @@ def create_dt(PATH_PRICE_CSV, PATH_CALENDER_CSV, PATH_SALES_CSV, is_train=True, 
     dtype = {numcol:"float32" for numcol in numcols}
     dtype.update({col: "category" for col in catcols if col != "id"})
     dt = pd.read_csv(PATH_SALES_CSV,
-                     nrows = nrows, usecols = catcols + numcols, dtype = dtype)
+                     nrows=nrows,
+                     usecols=catcols+numcols,
+                     dtype=dtype)
 
     dt["state_name"] = dt["state_id"].copy()
 

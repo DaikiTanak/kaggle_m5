@@ -18,14 +18,22 @@ import hydra
 from mlflow.utils.mlflow_tags import MLFLOW_RUN_NAME
 import mlflow
 
+def date2d(date):
+    dev_lastdate = datetime(2016,4, 24)
 
-# target_encoding_periods = [7, 27]
+    tr_last = 1941
+    diff = (dev_lastdate -date).days
+    return tr_last - diff
 
 def train_lgbm(df, cfg):
     # train_validation split
 
+    cwd = hydra.utils.get_original_cwd()
 
+    df_calendar = pd.read_csv(os.path.join(cwd,"../input/m5-forecasting-accuracy/calendar.csv"))
+    df_prices = pd.read_csv(os.path.join(cwd,"../input/m5-forecasting-accuracy/sell_prices.csv"))
 
+    df_sales = pd.read_csv(os.path.join(cwd,"../input/m5-forecasting-accuracy/sales_train_evaluation.csv"))
 
 
     cat_feats = ['item_id', 'dept_id','store_id', 'cat_id', 'state_id']
@@ -42,6 +50,8 @@ def train_lgbm(df, cfg):
     else:
         import lightgbm as lgb
 
+    fold_val_scores = dict()
+
     for fold_idx in range(1, 1+n_folds, 1):
         print("*"*20)
         print(f"fold {fold_idx}...")
@@ -56,6 +66,17 @@ def train_lgbm(df, cfg):
 
         train_df = df.query("date < @val_firstdate")
         val_df = df.query("@val_lastdate >= date > @train_lastdate")
+
+
+        val_df_wrmsse = df_sales.iloc[:, -28:]
+
+        wrmsse_evaluator = eval_metrics.WRMSSEEvaluator(df_sales.iloc[:, :-28],
+                                                        val_df_wrmsse,
+                                                        calendar=df_calendar,
+                                                        prices=df_prices,
+                                                        val_firstdate=date2d(val_firstdate),
+                                                        converted_val_df=val_df,
+                                                        )
 
         del df; gc.collect();
 
@@ -74,7 +95,7 @@ def train_lgbm(df, cfg):
                                  label=val_df["sales"],
                                  free_raw_data=False)
 
-        del train_df, val_df; gc.collect()
+        del train_df; gc.collect()
 
         lgbm_params = {}
         for k, v in cfg.lgbm.model_params.items():
@@ -103,12 +124,33 @@ def train_lgbm(df, cfg):
 
             m_lgb = lgb.train(lgbm_params,
                               train_data,
-                              valid_sets=[train_data, val_data],
+                              # valid_sets=[train_data, val_data],
+                              valid_sets=[val_data],
                               num_boost_round=cfg.lgbm.train_params.num_boost_round,
                               early_stopping_rounds=cfg.lgbm.train_params.early_stopping_rounds,
                               categorical_feature=cat_feats,
-                              verbose_eval=100,)
-                              # feval=wrmsse)
+                              verbose_eval=100,
+                              feval=wrmsse_evaluator.wrmsse_metric_lgbm)
+
+            m_lgb.save_model(os.path.join(cwd, f"../result/fold{fold_idx}.lgb"))
+
+            val_pred = m_lgb.predict(val_df[train_cols].values, num_iteration=m_lgb.best_iteration)
+
+            # val_df["sales"] = val_pred
+            # val_df_cp = val_df.loc[:, ["id","sales"]].copy()
+
+            # TODO: implement val score
+
+            # val_df["sales"] = val_pred
+            # val_pred_df = eval_metrics.convert2origin_df(val_df,
+            #                                              val_firstdate=date2d(val_firstdate),)
+            # groups, val_scores = wrmsse_evaluator.score(val_pred_df)
+            _, val_score, _ = wrmsse_evaluator.wrmsse_metric_lgbm(val_pred, val_df[train_cols])
+            print(f"VAL WRMSSE:{val_score}")
+
+            fold_val_scores[fold_idx] = val_score
+
+            del val_df; gc.collect()
 
     #     m_lgb.save_model(f"../result/targetencoding_fullmodel_fold{fold_idx}.lgb")
         # model_savepath = os.path.join(hydra.utils.get_original_cwd(), "../result/no_fe_fold{fold_idx}.lgb")
@@ -118,26 +160,18 @@ def train_lgbm(df, cfg):
 
     # importance.to_csv("")
 
-    return m_lgb
+    return m_lgb, fold_val_scores
 
 def write_train_logs(writer, logs) -> None:
     pass
-
-
 
 @hydra.main(config_path='../config/config.yaml')
 def run(cfg: DictConfig,):
     cwd = hydra.utils.get_original_cwd()
 
-    # print(list(cfg.lgbm.model_params.metric), type(list(cfg.lgbm.model_params.metric)))
-    # input("LLL")
-
     writer.log_params_from_omegaconf_dict(cfg)
     print(os.getcwd())
     writer.log_artifact(os.path.join(os.getcwd(), '.hydra/config.yaml'))
-
-    print(cfg.lgbm.items())
-    print(type(cfg.lgbm.model_params))
 
     load_start_time = time.time()
     if cfg.data.path_basic_df == "":
@@ -149,8 +183,6 @@ def run(cfg: DictConfig,):
 
         df = load_data.create_dt(PATH_PRICE_CSV, PATH_CALENDER_CSV, PATH_SALES_CSV, first_day=1500,)
         df = load_data.reduce_mem_usage(df)
-        print(df.shape)
-
     else:
         print("loading made basic csv...")
         path_df = cfg.data.path_basic_df
@@ -166,10 +198,10 @@ def run(cfg: DictConfig,):
 
     create_feature.create_fea(df)
 
-    model = train_lgbm(df, cfg)
+    model, _ = train_lgbm(df, cfg)
     model_savepath = os.path.join(cwd, f"../result/{writer.experiment_name}_{writer.run_id}.model")
     model.save_model(model_savepath)
-
+    writer.log_param("model_path", model_savepath)
 
 if __name__ == "__main__":
     val_days = 27
@@ -177,11 +209,11 @@ if __name__ == "__main__":
     dev_lastdate = datetime(2016,4, 24)
 
     tr_last = 1941
-    tr_first = 1800
+    tr_first = 1550
     dev_firstdate = dev_lastdate - timedelta(tr_last-tr_first)
 
     experiment_name = "lgbm-train"
-    task_name = "no-fe-baseline"
+    task_name = "test"
     writer = MlflowWriter(experiment_name, task_name)
 
     run()

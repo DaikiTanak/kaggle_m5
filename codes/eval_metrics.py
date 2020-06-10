@@ -11,7 +11,7 @@ from tqdm.notebook import tqdm
 ## from https://www.kaggle.com/c/m5-forecasting-accuracy/discussion/133834 and edited to get scores at all levels
 class WRMSSEEvaluator(object):
 
-    def __init__(self, train_df: pd.DataFrame, valid_df: pd.DataFrame, calendar: pd.DataFrame, prices: pd.DataFrame):
+    def __init__(self, train_df: pd.DataFrame, valid_df: pd.DataFrame, calendar: pd.DataFrame, prices: pd.DataFrame, val_firstdate, converted_val_df):
         train_y = train_df.loc[:, train_df.columns.str.startswith('d_')]
         train_target_columns = train_y.columns.tolist()
         weight_columns = train_y.iloc[:, -28:].columns.tolist()
@@ -32,6 +32,8 @@ class WRMSSEEvaluator(object):
         self.weight_columns = weight_columns
         self.id_columns = id_columns
         self.valid_target_columns = valid_target_columns
+        self.val_firstdate = val_firstdate
+        self.converted_val_df = converted_val_df
 
         weight_df = self.get_weight_df()
 
@@ -82,7 +84,20 @@ class WRMSSEEvaluator(object):
         scale = getattr(self, f'lv{lv}_scale')
         return (score / scale).map(np.sqrt)
 
+
+    def wrmsse_metric_lgbm(self, preds, data):
+        # y_true = data.get_label()
+
+        dt = self.converted_val_df.copy()
+        dt["sales"] = preds
+        dt = convert2origin_df(dt, self.val_firstdate)
+        groups, scores = self.score(dt)
+        score = np.mean(scores)
+
+        return 'wrmsse', score, False
+
     def score(self, valid_preds: Union[pd.DataFrame, np.ndarray]) -> float:
+
         assert self.valid_df[self.valid_target_columns].shape == valid_preds.shape
 
         if isinstance(valid_preds, np.ndarray):
@@ -100,6 +115,8 @@ class WRMSSEEvaluator(object):
             all_scores.append(lv_scores.sum())
 
         return group_ids, all_scores
+
+
 
 
 def get_public_score(prediction_df):
@@ -136,6 +153,18 @@ def get_public_score(prediction_df):
     print(f"\nPublic LB Score: {round(score_public_lb, 5)}")
 
 
+def convert2origin_df(pred_df, val_firstdate, ) -> pd.DataFrame:
+    # pred_df is melted.
+
+    # TODO: d***の順番がめちゃくちゃなのを直す
+
+    dt = pred_df[["id","sales"]].copy()
+    dt["d"] = [f"d_{val_firstdate+rank}" for rank in dt.groupby("id")["id"].cumcount()]
+    dt = dt.set_index(["id", "d" ]).unstack()["sales"].reset_index().sort_values("id", inplace =False)
+    dt.reset_index(drop=True, inplace = True)
+    del dt["id"]
+    return dt
+
 #
 # weight_mat = np.c_[np.ones([NUM_ITEMS,1]).astype(np.int8), # level 1
 #                    pd.get_dummies(product.state_id.astype(str),drop_first=False).astype('int8').values,
@@ -150,7 +179,7 @@ def get_public_score(prediction_df):
 #                    pd.get_dummies(product.state_id.astype(str) + product.item_id.astype(str),drop_first=False).astype('int8').values,
 #                    np.identity(NUM_ITEMS).astype(np.int8) #item :level 12
 #                    ].T
-
+#
 # weight_mat_csr = csr_matrix(weight_mat)
 # del weight_mat; gc.collect()
 #
@@ -195,29 +224,29 @@ def get_public_score(prediction_df):
 # weight1, weight2 = weight_calc(df, product)
 #
 # DAYS_PRED = 28
-# def wrmsse(preds, data):
-#
-#     # this function is calculate for last 28 days to consider the non-zero demand period
-#     # actual obserbed values / 正解ラベル
-#     y_true = data.get_label()
-#
-#     y_true = y_true[-(NUM_ITEMS * DAYS_PRED):]
-#     preds = preds[-(NUM_ITEMS * DAYS_PRED):]
-#     # number of columns
-#     num_col = DAYS_PRED
-#
-#     # reshape data to original array((NUM_ITEMS*num_col,1)->(NUM_ITEMS, num_col) ) / 推論の結果が 1 次元の配列になっているので直す
-#     reshaped_preds = preds.reshape(num_col, NUM_ITEMS).T
-#     reshaped_true = y_true.reshape(num_col, NUM_ITEMS).T
-#
-#
-#     train = weight_mat_csr*np.c_[reshaped_preds, reshaped_true]
-#
-#     score = np.sum(
-#                 np.sqrt(
-#                     np.mean(
-#                         np.square(
-#                             train[:,:num_col] - train[:,num_col:])
-#                         ,axis=1) / weight1) * weight2)
-#
-#     return 'wrmsse', score, False
+def wrmsse(preds, data):
+
+    # this function is calculate for last 28 days to consider the non-zero demand period
+    # actual obserbed values / 正解ラベル
+    y_true = data.get_label()
+
+    y_true = y_true[-(NUM_ITEMS * DAYS_PRED):]
+    preds = preds[-(NUM_ITEMS * DAYS_PRED):]
+    # number of columns
+    num_col = DAYS_PRED
+
+    # reshape data to original array((NUM_ITEMS*num_col,1)->(NUM_ITEMS, num_col) ) / 推論の結果が 1 次元の配列になっているので直す
+    reshaped_preds = preds.reshape(num_col, NUM_ITEMS).T
+    reshaped_true = y_true.reshape(num_col, NUM_ITEMS).T
+
+
+    train = weight_mat_csr*np.c_[reshaped_preds, reshaped_true]
+
+    score = np.sum(
+                np.sqrt(
+                    np.mean(
+                        np.square(
+                            train[:,:num_col] - train[:,num_col:])
+                        ,axis=1) / weight1) * weight2)
+
+    return 'wrmsse', score, False
