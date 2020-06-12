@@ -11,7 +11,7 @@ from tqdm.notebook import tqdm
 ## from https://www.kaggle.com/c/m5-forecasting-accuracy/discussion/133834 and edited to get scores at all levels
 class WRMSSEEvaluator(object):
 
-    def __init__(self, train_df: pd.DataFrame, valid_df: pd.DataFrame, calendar: pd.DataFrame, prices: pd.DataFrame, val_firstdate, converted_val_df):
+    def __init__(self, train_df: pd.DataFrame, valid_df: pd.DataFrame, calendar: pd.DataFrame, prices: pd.DataFrame, val_firstdate, val_lastdate, converted_val_df):
         train_y = train_df.loc[:, train_df.columns.str.startswith('d_')]
         train_target_columns = train_y.columns.tolist()
         weight_columns = train_y.iloc[:, -28:].columns.tolist()
@@ -32,7 +32,10 @@ class WRMSSEEvaluator(object):
         self.weight_columns = weight_columns
         self.id_columns = id_columns
         self.valid_target_columns = valid_target_columns
+
+
         self.val_firstdate = val_firstdate
+        self.val_lastdate = val_lastdate
         self.converted_val_df = converted_val_df
 
         weight_df = self.get_weight_df()
@@ -90,7 +93,7 @@ class WRMSSEEvaluator(object):
 
         dt = self.converted_val_df.copy()
         dt["sales"] = preds
-        dt = convert2origin_df(dt, self.val_firstdate)
+        dt = convert2origin_df(dt, self.val_firstdate, self.val_lastdate)
         groups, scores = self.score(dt)
         score = np.mean(scores)
 
@@ -99,6 +102,7 @@ class WRMSSEEvaluator(object):
     def score(self, valid_preds: Union[pd.DataFrame, np.ndarray]) -> float:
 
         assert self.valid_df[self.valid_target_columns].shape == valid_preds.shape
+
 
         if isinstance(valid_preds, np.ndarray):
             valid_preds = pd.DataFrame(valid_preds, columns=self.valid_target_columns)
@@ -153,16 +157,21 @@ def get_public_score(prediction_df):
     print(f"\nPublic LB Score: {round(score_public_lb, 5)}")
 
 
-def convert2origin_df(pred_df, val_firstdate, ) -> pd.DataFrame:
+def convert2origin_df(pred_df, val_firstdate, val_lastdate) -> pd.DataFrame:
     # pred_df is melted.
 
     # TODO: d***の順番がめちゃくちゃなのを直す
+
+    cols = [f"d_{i}" for i in range(val_firstdate, val_lastdate+1, 1)]
 
     dt = pred_df[["id","sales"]].copy()
     dt["d"] = [f"d_{val_firstdate+rank}" for rank in dt.groupby("id")["id"].cumcount()]
     dt = dt.set_index(["id", "d" ]).unstack()["sales"].reset_index().sort_values("id", inplace =False)
     dt.reset_index(drop=True, inplace = True)
     del dt["id"]
+
+    # sort w.r.t. d_***
+    dt = dt.sort_index(axis=1)
     return dt
 
 #

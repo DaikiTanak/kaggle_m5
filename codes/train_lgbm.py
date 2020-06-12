@@ -75,6 +75,7 @@ def train_lgbm(df, cfg):
                                                         calendar=df_calendar,
                                                         prices=df_prices,
                                                         val_firstdate=date2d(val_firstdate),
+                                                        val_lastdate=date2d(val_lastdate),
                                                         converted_val_df=val_df,
                                                         )
 
@@ -136,15 +137,7 @@ def train_lgbm(df, cfg):
 
             val_pred = m_lgb.predict(val_df[train_cols].values, num_iteration=m_lgb.best_iteration)
 
-            # val_df["sales"] = val_pred
-            # val_df_cp = val_df.loc[:, ["id","sales"]].copy()
 
-            # TODO: implement val score
-
-            # val_df["sales"] = val_pred
-            # val_pred_df = eval_metrics.convert2origin_df(val_df,
-            #                                              val_firstdate=date2d(val_firstdate),)
-            # groups, val_scores = wrmsse_evaluator.score(val_pred_df)
             _, val_score, _ = wrmsse_evaluator.wrmsse_metric_lgbm(val_pred, val_df[train_cols])
             print(f"VAL WRMSSE:{val_score}")
 

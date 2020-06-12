@@ -23,7 +23,9 @@ def create_fea(dt, cash_df=None, start_date=None) -> None:
     lag_win_pairs = [
         (28, 28),
         (28, 7),
-        # (7,7)
+        (7,7),
+        (7, 3),
+        (1, 3),
     ]
     lags = list(set(map(lambda x: x[0], lag_win_pairs)))
     wins = list(set(map(lambda x: x[1], lag_win_pairs)))
