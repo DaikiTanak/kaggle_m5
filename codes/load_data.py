@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import time
 import gc
+import os
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -149,10 +150,21 @@ def save_basic_df():
     PATH_CALENDER_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/calendar.csv")
     # PATH_SALES_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sales_train_validation.csv")
     PATH_SALES_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sales_train_evaluation.csv")
-    df = load_data.create_dt(PATH_PRICE_CSV, PATH_CALENDER_CSV, PATH_SALES_CSV, first_day=1,)
+    df = create_dt(PATH_PRICE_CSV, PATH_CALENDER_CSV, PATH_SALES_CSV, first_day=1,)
     df.to_csv("../input/m5-forecasting-accuracy/sales_train_evaluation_basic.csv")
+    return
+
+def save_test_df():
+    cwd = ""
+    PATH_PRICE_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sell_prices.csv")
+    PATH_CALENDER_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/calendar.csv")
+    # PATH_SALES_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sales_train_validation.csv")
+    PATH_SALES_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sales_train_evaluation.csv")
+    df = create_dt(PATH_PRICE_CSV, PATH_CALENDER_CSV, PATH_SALES_CSV, is_train=False)
+    df.to_csv("../input/m5-forecasting-accuracy/test_basic.csv")
     return
 
 
 if __name__ == "__main__":
-    save_basic_df()
+    # save_basic_df()
+    save_test_df()

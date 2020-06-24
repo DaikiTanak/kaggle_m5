@@ -12,21 +12,17 @@ def roll_target(lag_size: int, window_size: int, categorical_feature: str):
     """
     return
 
-def create_fea(dt, cash_df=None, start_date=None) -> None:
+def create_fea(dt, lag_win_pairs=None, cash_df=None, start_date=None) -> None:
     # start_date: start date to create features from.
+
+    if lag_win_pairs is None:
+        lag_win_pairs = []
 
     print("Creating features...")
 
     useless_cols = []
 
 
-    lag_win_pairs = [
-        (28, 28),
-        (28, 7),
-        (7,7),
-        (7, 3),
-        (1, 3),
-    ]
     lags = list(set(map(lambda x: x[0], lag_win_pairs)))
     wins = list(set(map(lambda x: x[1], lag_win_pairs)))
 

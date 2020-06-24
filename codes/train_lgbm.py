@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 
 
-
 # User defined func
 import eval_metrics
 import load_data
@@ -25,6 +24,10 @@ def date2d(date):
     diff = (dev_lastdate -date).days
     return tr_last - diff
 
+
+
+
+
 def train_lgbm(df, cfg):
     # train_validation split
 
@@ -41,16 +44,25 @@ def train_lgbm(df, cfg):
                       "event_type_1", "event_type_2",
                       "wday", "month", "year",
                       "snap_flag"])
+
     useless_cols = ["id", "date", "sales","d",
                     "wm_yr_wk", "weekday",
                    "state_name", "snap_CA", "snap_TX", "snap_WI"]
 
-    if cfg.lgbm.tuning:
+
+    if cfg.lgbm.optuna_tuning:
         import optuna.integration.lightgbm as lgb
     else:
         import lightgbm as lgb
 
     fold_val_scores = dict()
+
+
+    """
+    2016/3/24 ~ 2016/4/24 : public lb
+    2016/2/24 ~ 2016/3/24 : fold1 validation set
+    2016/1/24 ~ 2016/2/24 : fold2 validation set
+    """
 
     for fold_idx in range(1, 1+n_folds, 1):
         print("*"*20)
@@ -67,27 +79,24 @@ def train_lgbm(df, cfg):
         train_df = df.query("date < @val_firstdate")
         val_df = df.query("@val_lastdate >= date > @train_lastdate")
 
-
         val_df_wrmsse = df_sales.iloc[:, -28:]
 
-        wrmsse_evaluator = eval_metrics.WRMSSEEvaluator(df_sales.iloc[:, :-28],
-                                                        val_df_wrmsse,
-                                                        calendar=df_calendar,
-                                                        prices=df_prices,
-                                                        val_firstdate=date2d(val_firstdate),
-                                                        val_lastdate=date2d(val_lastdate),
-                                                        converted_val_df=val_df,
-                                                        )
+        # wrmsse_evaluator = eval_metrics.WRMSSEEvaluator(df_sales.iloc[:, :-28],
+        #                                                 val_df_wrmsse,
+        #                                                 calendar=df_calendar,
+        #                                                 prices=df_prices,
+        #                                                 val_firstdate=date2d(val_firstdate),
+        #                                                 val_lastdate=date2d(val_lastdate),
+        #                                                 converted_val_df=val_df,
+        #                                                 )
 
         del df; gc.collect();
 
         print(min(train_df["date"]), max(train_df["date"]))
         print(min(val_df["date"]), max(val_df["date"]))
 
-
-        train_df[:1000].dropna(inplace=True)
+        train_df[:500].dropna(inplace=True)
         train_cols = train_df.columns[~train_df.columns.isin(useless_cols)]
-        print(train_cols)
 
         train_data = lgb.Dataset(train_df[train_cols],
                                  label=train_df["sales"],
@@ -106,7 +115,7 @@ def train_lgbm(df, cfg):
                 lgbm_params[k] = v
         print(lgbm_params)
 
-        if cfg.lgbm.tuning:
+        if cfg.lgbm.optuna_tuning:
             best_params, tuning_hist = dict(), list()
             m_lgb = lgb.train(lgbm_params,
                               train_data,
@@ -130,18 +139,18 @@ def train_lgbm(df, cfg):
                               num_boost_round=cfg.lgbm.train_params.num_boost_round,
                               early_stopping_rounds=cfg.lgbm.train_params.early_stopping_rounds,
                               categorical_feature=cat_feats,
-                              verbose_eval=100,
-                              feval=wrmsse_evaluator.wrmsse_metric_lgbm)
+                              verbose_eval=10,)
+                              # feval=wrmsse_evaluator.wrmsse_metric_lgbm)
 
             m_lgb.save_model(os.path.join(cwd, f"../result/fold{fold_idx}.lgb"))
 
             val_pred = m_lgb.predict(val_df[train_cols].values, num_iteration=m_lgb.best_iteration)
 
 
-            _, val_score, _ = wrmsse_evaluator.wrmsse_metric_lgbm(val_pred, val_df[train_cols])
-            print(f"VAL WRMSSE:{val_score}")
+            # _, val_score, _ = wrmsse_evaluator.wrmsse_metric_lgbm(val_pred, val_df[train_cols])
+            # print(f"VAL WRMSSE:{val_score}")
 
-            fold_val_scores[fold_idx] = val_score
+            # fold_val_scores[fold_idx] = val_score
 
             del val_df; gc.collect()
 
@@ -153,60 +162,174 @@ def train_lgbm(df, cfg):
 
     # importance.to_csv("")
 
-    return m_lgb, fold_val_scores
+    return m_lgb, fold_val_scores, train_cols
 
-def write_train_logs(writer, logs) -> None:
-    pass
+
 
 @hydra.main(config_path='../config/config.yaml')
 def run(cfg: DictConfig,):
     cwd = hydra.utils.get_original_cwd()
 
+
+    # lag_win_pairs = [
+    #         (28, 28),
+    #         (28, 7),
+    #         (7,7),
+    #         (7, 3),
+    #         (1, 3),
+    #     ]
+    lag_win_pairs = cfg.feat.lag_win_pairs
+
     writer.log_params_from_omegaconf_dict(cfg)
     print(os.getcwd())
     writer.log_artifact(os.path.join(os.getcwd(), '.hydra/config.yaml'))
 
+
+    # ----------------------------------------------------------------------
+    # load data
+    # ----------------------------------------------------------------------
+    PATH_PRICE_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sell_prices.csv")
+    PATH_CALENDER_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/calendar.csv")
+    # PATH_SALES_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sales_train_validation.csv")
+    PATH_SALES_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sales_train_evaluation.csv")
+    PATH_SAMPLE_SUB_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sample_submission.csv")
+
     load_start_time = time.time()
     if cfg.data.path_basic_df == "":
         print("making basic df from scratch...")
-        PATH_PRICE_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sell_prices.csv")
-        PATH_CALENDER_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/calendar.csv")
-        # PATH_SALES_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sales_train_validation.csv")
-        PATH_SALES_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sales_train_evaluation.csv")
+
 
         df = load_data.create_dt(PATH_PRICE_CSV, PATH_CALENDER_CSV, PATH_SALES_CSV, first_day=1500,)
         df = load_data.reduce_mem_usage(df)
     else:
-        print("loading made basic csv...")
+        print("loading saved basic csv...")
         path_df = cfg.data.path_basic_df
         df = pd.read_csv(os.path.join(cwd, path_df), index_col=0)
         df = load_data.reduce_mem_usage(df)
         print(df.shape)
-    for c in df.columns:
-        print(c, df[c].dtype, type(df[c].iloc[0]))
+
     print(f"data loading time:{(time.time() - load_start_time)//60} min.")
 
     df = df.query("date > @dev_firstdate")
     gc.collect()
 
-    create_feature.create_fea(df)
+    # ----------------------------------------------------------------------
+    # feature engineering
+    # ----------------------------------------------------------------------
 
-    model, _ = train_lgbm(df, cfg)
-    model_savepath = os.path.join(cwd, f"../result/{writer.experiment_name}_{writer.run_id}.model")
-    model.save_model(model_savepath)
-    writer.log_param("model_path", model_savepath)
+    max_lags = max(list(map(lambda x:x[0], lag_win_pairs))) * 2
+    create_feature.create_fea(df, lag_win_pairs=lag_win_pairs)
+
+    # ----------------------------------------------------------------------
+    # Train model
+    # ----------------------------------------------------------------------
+    if cfg.lgbm.pretrained:
+        m_lgb = lgb.Booster(model_file=os.path.join(cwd, cfg.lgbm.pretrained_model_path))
+
+    else:
+        model, _, train_cols = train_lgbm(df, cfg)
+        model_savepath = os.path.join(cwd, f"../result/{writer.experiment_name}_{writer.run_id}.model")
+        model.save_model(model_savepath)
+        writer.log_param("model_path", model_savepath)
+
+    # ----------------------------------------------------------------------
+    # Inference on public lb
+    # ----------------------------------------------------------------------
+    public_pred_df = make_lb_predictions(model, public_firstdate, train_cols, max_lags, test_data_path=cfg.data.path_test_df, lag_win_pairs=lag_win_pairs)
+    public_pred_wrmsse = eval_metrics.get_public_score(public_pred_df, PATH_SALES_CSV, PATH_PRICE_CSV, PATH_CALENDER_CSV, PATH_SAMPLE_SUB_CSV)
+    print(f"Public score: {public_pred_wrmsse}")
+    writer.log_metric("public_WRMSSE", public_pred_wrmsse)
+
+    # ----------------------------------------------------------------------
+    # Inference on private lb
+    # ----------------------------------------------------------------------
+    pass
+
+def make_lb_predictions(m_lgb, first_day, train_cols, max_lags, test_data_path=False, lag_win_pairs=None):
+    """
+    Make predictions for public lb.
+    Params:
+        m_lgb:
+        first_day: datetime object
+    """
+    cwd = hydra.utils.get_original_cwd()
+
+    if lag_win_pairs is None:
+        lag_win_pairs = []
+
+    PATH_PRICE_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sell_prices.csv")
+    PATH_CALENDER_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/calendar.csv")
+    # PATH_SALES_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sales_train_validation.csv")
+    PATH_SALES_CSV = os.path.join(cwd, "../input/m5-forecasting-accuracy/sales_train_evaluation.csv")
+
+    if test_data_path:
+        te = pd.read_csv(os.path.join(cwd, test_data_path), index_col=0)
+        te = load_data.reduce_mem_usage(te)
+    else:
+        te = load_data.create_dt(PATH_PRICE_CSV, PATH_CALENDER_CSV, PATH_SALES_CSV, is_train=False)
+
+    cols = [f"F{i}" for i in range(1,29)]
+    alpha = 1.0
+
+    for tdelta in range(0, 28):
+        start = time.time()
+        # target date to predict sales
+        day = first_day + timedelta(days=tdelta)
+        print("Predicting : ", tdelta, day.date())
+
+        # target period
+        tst = te[(te.date >= day - timedelta(days=max_lags)) & (te.date <= day)].copy()
+
+        create_feature.create_fea(tst, lag_win_pairs=lag_win_pairs)
+
+        tst = tst.loc[tst.date == day, train_cols]
+        # fill "sales" with predicted value by model
+        predictions = alpha*m_lgb.predict(tst) # magic multiplier by kyakovlev
+        te.loc[te.date == day, "sales"] = predictions
+        print(f"Elapsed time: {(time.time() - start) // 60} min.")
+
+    te_sub = te.loc[te.date >= first_day, ["id", "sales"]].copy()
+    # del te; gc.collect()
+    te_sub["F"] = [f"F{rank}" for rank in te_sub.groupby("id")["id"].cumcount()+1]
+    te_sub = te_sub.set_index(["id", "F" ]).unstack()["sales"][cols].reset_index()
+    te_sub.fillna(0., inplace=True)
+    te_sub.sort_values("id", inplace=True)
+    te_sub.reset_index(drop=True, inplace=True)
+
+
+    print(te_sub.head())
+
+    return te_sub
 
 if __name__ == "__main__":
+
+    def d2date(d:int) -> datetime:
+        # convert d_** into datetime object.
+        # datetime(2016, 6, 19) is d_1969.
+        return datetime(2016,6,19) - timedelta(1969 - d)
+
+
     val_days = 27
     n_folds = 1
-    dev_lastdate = datetime(2016,4, 24)
 
-    tr_last = 1941
-    tr_first = 1550
-    dev_firstdate = dev_lastdate - timedelta(tr_last-tr_first)
+    dev_last = 1913
+    dev_first = 1
+    dev_firstdate = d2date(dev_first)
+    # used for lgbm-training and validation.
+    dev_lastdate = d2date(1913) # d_1913
+    public_firstdate = d2date(1914) # d_1914
+    public_lastdate = datetime(2016, 5, 22) # d_1941
+
+    # private is for d_1941 ~ d_1969
+    private_lastdate = datetime(2016, 6, 19) # d_1969
+    print(f"dev_first:{dev_firstdate} dev_last:{dev_lastdate} public_last:{public_lastdate}")
+
 
     experiment_name = "lgbm-train"
     task_name = "test"
     writer = MlflowWriter(experiment_name, task_name)
 
+    start_time = time.time()
     run()
+    elapsed_time = time.time() - start_time
+    writer.log_metric("elapsed_time_min", elapsed_time//60)
