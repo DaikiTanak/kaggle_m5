@@ -27,8 +27,8 @@ def date2d(date):
 
 
 
-
-def train_lgbm(df, cfg):
+# TODO: implemente retrain option.
+def train_lgbm(df, cfg, retrain=False):
     # train_validation split
 
     cwd = hydra.utils.get_original_cwd()
@@ -217,7 +217,8 @@ def run(cfg: DictConfig,):
     # feature engineering
     # ----------------------------------------------------------------------
 
-    max_lags = max(list(map(lambda x:x[0], lag_win_pairs))) * 2
+    # max_lags = max(list(map(lambda x:x[0], lag_win_pairs))) * 2
+    max_lags = 56+29
     create_feature.create_fea(df, lag_win_pairs=lag_win_pairs)
 
     # ----------------------------------------------------------------------
@@ -245,7 +246,7 @@ def run(cfg: DictConfig,):
     # ----------------------------------------------------------------------
     pass
 
-def make_lb_predictions(m_lgb, first_day, train_cols, max_lags, test_data_path=False, lag_win_pairs=None):
+def make_lb_predictions(m_lgb, first_day, train_cols, max_lags, test_data_path=False, lag_win_pairs=None, thresh=0.0):
     """
     Make predictions for public lb.
     Params:
@@ -296,8 +297,6 @@ def make_lb_predictions(m_lgb, first_day, train_cols, max_lags, test_data_path=F
     te_sub.sort_values("id", inplace=True)
     te_sub.reset_index(drop=True, inplace=True)
 
-
-    print(te_sub.head())
 
     return te_sub
 

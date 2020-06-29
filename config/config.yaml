@@ -15,7 +15,7 @@ lgbm:
     tweedie_variance_power : 1.1
     # metric : ["custom", "rmse"]
     metric : rmse
-    learning_rate : 0.05
+    learning_rate : 0.04
     feature_fraction: 0.8
     bagging_fraction : 0.85
     bagging_freq : 1
@@ -26,5 +26,5 @@ lgbm:
     num_threads : 8
 
   train_params:
-    num_boost_round : 2000
+    num_boost_round : 3000
     early_stopping_rounds : 200
